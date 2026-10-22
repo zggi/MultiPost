@@ -12,7 +12,8 @@ import os
 import time
 
 from ..models import Account, Job, PublishResult
-from .base import PublishError, apply_raw_cookie, fail, launch_persistent, ok, require_file
+from .base import (PublishError, apply_raw_cookie, dismiss_overlays, fail,
+                   launch_persistent, ok, require_file)
 
 STUDIO_URL = "https://studio.youtube.com"
 LOGIN_URL = "https://accounts.google.com/ServiceLogin?service=youtube"
@@ -80,7 +81,8 @@ def publish(account: Account, job: Job, title: str, description: str,
                     "tp-yt-paper-radio-button[name='PUBLIC']").first
                 public_radio.wait_for(state="visible", timeout=60_000)
                 public_radio.click()
-                page.locator("#done-button").first.click()
+                dismiss_overlays(page, seconds=10)
+                page.locator("#done-button").first.click(timeout=30_000)
                 page.wait_for_timeout(8000)
                 return ok(account, "Video YouTube terbit sebagai publik "
                                    "(video vertikal <=3 menit otomatis jadi Shorts).",

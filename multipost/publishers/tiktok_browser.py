@@ -16,7 +16,8 @@ import os
 import time
 
 from ..models import Account, Job, PublishResult
-from .base import PublishError, apply_raw_cookie, fail, launch_persistent, ok, require_file
+from .base import (PublishError, apply_raw_cookie, dismiss_overlays, fail,
+                   launch_persistent, ok, require_file)
 
 UPLOAD_URL = "https://www.tiktok.com/tiktokstudio/upload"
 LOGIN_URL = "https://www.tiktok.com/login"
@@ -89,8 +90,18 @@ def publish(account: Account, job: Job, caption: str, profile_dir: str,
                     page.wait_for_timeout(5000)
                 else:
                     raise PublishError("Upload TikTok tidak selesai diproses (timeout).")
-                post_btn.click()
-                page.wait_for_timeout(8000)
+                # TikTok often floats a modal (checks/notices) over the button:
+                # clear overlays first, or the click is intercepted forever.
+                dismiss_overlays(page, seconds=15)
+                try:
+                    post_btn.click(timeout=30_000)
+                except Exception:
+                    dismiss_overlays(page, seconds=15)
+                    post_btn.click(timeout=30_000)
+                page.wait_for_timeout(3000)
+                # A confirmation modal can appear AFTER clicking Post.
+                dismiss_overlays(page, seconds=15)
+                page.wait_for_timeout(5000)
                 return ok(account, "Video TikTok terbit (cek profil untuk memastikan).",
                           "https://www.tiktok.com/")
             except PublishError as e:

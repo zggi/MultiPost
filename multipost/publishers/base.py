@@ -69,6 +69,51 @@ def parse_cookies(account: Account) -> list[dict]:
     return [{"name": name, "value": secret, "domain": domain, "path": "/"}]
 
 
+def dismiss_overlays(page, seconds: float = 20) -> bool:
+    """Close modal/popups that intercept clicks (TikTok/YouTube render them in
+    a floating-ui portal on top of everything - Playwright then retries the
+    click forever: 'subtree intercepts pointer events').
+
+    Strategy: if a dialog/portal is visible, click its primary button
+    (Post/Confirm/Continue/...), else press Escape. Returns True when no
+    overlay remains. Safe to call when nothing is open (returns at once).
+    """
+    import time
+
+    candidates = ["Post", "Publish", "Confirm", "Continue", "OK", "Got it",
+                  "Not now", "Discard", "Close", "Konfirmasi", "Lanjutkan",
+                  "Tutup", "Simpan", "Ya"]
+    deadline = time.time() + seconds
+    while True:
+        portal = page.locator(
+            "[data-floating-ui-portal], div[role='dialog'], "
+            "div[role='alertdialog']").first
+        try:
+            visible = portal.count() > 0 and portal.is_visible()
+        except Exception:
+            visible = False
+        if not visible:
+            return True
+        clicked = False
+        for text in candidates:
+            btn = portal.locator(f"button:has-text('{text}')").first
+            try:
+                if btn.count() > 0 and btn.is_visible():
+                    btn.click(timeout=1200)
+                    clicked = True
+                    break
+            except Exception:
+                continue
+        if not clicked:
+            try:
+                page.keyboard.press("Escape")
+            except Exception:
+                pass
+        if time.time() >= deadline:
+            return False
+        page.wait_for_timeout(700)
+
+
 def apply_raw_cookie(context, account: Account) -> None:
     """Cookie mode: inject the cookie(s) the user saved into the context."""
     cookies = parse_cookies(account)

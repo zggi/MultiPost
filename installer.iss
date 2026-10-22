@@ -3,7 +3,7 @@
 ; MultiPost is installed (default C:\BOT\MultiPost).
 
 #define MyAppName "MultiPost"
-#define MyAppVersion "1.3.0"
+#define MyAppVersion "1.3.1"
 #define MyAppExeName "MultiPost.exe"
 
 [Setup]
