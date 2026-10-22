@@ -38,10 +38,11 @@ def test_second_login_while_open_is_skipped():
     finally:
         release.set()
         t.join(timeout=5)
-        engine.tiktok_browser.open_login = orig
     # After the window closed, login can be opened again.
+    release.clear()
     engine.open_login_for(FakeStore(), acc)
     assert len(calls) == 2
+    engine.tiktok_browser.open_login = orig
 
 
 def test_friendly_error_translates_profile_lock():
