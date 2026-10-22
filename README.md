@@ -1,5 +1,6 @@
-# MultiPost v1.2 Hybrid — 1 Video, Posting ke 5 Platform
+# MultiPost v1.3 Hybrid — 1 Video, Posting ke 5 Platform
 
+> **v1.3 — UI interaktif:** dashboard tema gelap custom, sidebar, drag & drop video, kartu platform klik ON/OFF warna brand, penghitung karakter live per platform, preview gaya HP, progress publish live per platform.
 > **v1.2 — browser ringan:** mode Browser/Cookie sekarang memakai **Microsoft Edge bawaan Windows 11** (tanpa unduh Chromium ±170 MB). Fallback otomatis: Chrome, lalu Chromium bawaan Playwright. Paksa pilihan lewat env `MULTIPOST_BROWSER=edge|chrome|chromium`.
 
 Software desktop Windows: upload **1 video + 1 caption**, terbit ke **Instagram, Threads, Facebook, TikTok, YouTube** sekaligus.

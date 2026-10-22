@@ -25,21 +25,30 @@ def _noop(_: str) -> None:
 
 
 def publish_job(store: Store, job: Job, accounts: list[Account],
-                log: LogFn = _noop, dry_run: bool = False) -> list[PublishResult]:
+                log: LogFn = _noop, dry_run: bool = False,
+                on_result=None) -> list[PublishResult]:
+    """on_result(result) fires as EACH platform finishes, so the UI can show
+    live per-platform progress instead of one block at the end."""
     results: list[PublishResult] = []
     by_id = {a.id: a for a in accounts}
+
+    def _emit(result: PublishResult) -> None:
+        results.append(result)
+        if on_result is not None:
+            on_result(result)
+
     for account_id in job.account_ids:
         account = by_id.get(account_id)
         if account is None:
-            results.append(PublishResult("?", account_id, "skipped",
-                                         "Akun tidak ditemukan (sudah dihapus?)."))
+            _emit(PublishResult("?", account_id, "skipped",
+                                "Akun tidak ditemukan (sudah dihapus?)."))
             continue
         adapted = adapt(account.platform, job.caption, job.title)
         for w in adapted.warnings:
             log(f"[{account.platform}] {w}")
         if dry_run:
             log(f"[{account.platform}] DRY RUN -> {adapted.text[:80]}...")
-            results.append(PublishResult(
+            _emit(PublishResult(
                 account.platform, account.label, "dry_run",
                 f"Simulasi OK. Caption {len(adapted.text)} karakter"
                 + (f", judul: {adapted.title}" if adapted.title else "")))
@@ -47,7 +56,7 @@ def publish_job(store: Store, job: Job, accounts: list[Account],
         log(f"[{account.platform}] Mulai publish ke '{account.label}' ({account.mode})...")
         result = dispatch(store, account, job, adapted)
         log(f"[{account.platform}] {result.status.upper()}: {result.message}")
-        results.append(result)
+        _emit(result)
     store.append_history(results)
     return results
 
