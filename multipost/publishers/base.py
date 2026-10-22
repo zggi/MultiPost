@@ -66,7 +66,32 @@ def parse_cookies(account: Account) -> list[dict]:
         return cookies
     name = account.extra.get("cookie_name") or "sessionid"
     domain = account.extra.get("cookie_domain") or ".tiktok.com"
-    return [{"name": name, "value": secret, "domain": domain, "path": "/"}]
+    # Pasted a full Cookie header ("sessionid=abc; sid_tt=abc; ...")? Split it
+    # into individual cookies instead of treating the whole string as a value.
+    if ";" in secret and "=" in secret.split(";")[0]:
+        cookies = []
+        for pair in secret.split(";"):
+            if "=" not in pair:
+                continue
+            k, v = pair.split("=", 1)
+            k, v = k.strip(), v.strip()
+            if k and v:
+                cookies.append({"name": k, "value": v,
+                                "domain": domain, "path": "/"})
+        if cookies:
+            return cookies
+    value = secret
+    if value.lower().startswith(f"{name.lower()}="):
+        value = value[len(name) + 1:]
+    cookies = [{"name": name, "value": value, "domain": domain, "path": "/"}]
+    # TikTok's web session rides on companion cookies holding the same token:
+    # sessionid alone is often rejected by TikTok Studio (login page), while
+    # sessionid + sessionid_ss + sid_tt together are accepted.
+    if name == "sessionid" and "tiktok" in domain:
+        for companion in ("sessionid_ss", "sid_tt"):
+            cookies.append({"name": companion, "value": value,
+                            "domain": domain, "path": "/"})
+    return cookies
 
 
 _OVERLAY_SEL = ("[data-floating-ui-portal], div[role='dialog'], "

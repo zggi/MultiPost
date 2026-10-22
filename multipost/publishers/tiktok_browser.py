@@ -60,8 +60,17 @@ def publish(account: Account, job: Job, caption: str, profile_dir: str,
             ctx = launch_persistent(p, profile_dir, headless=False)
             try:
                 if account.mode == "cookie":
+                    from .base import parse_cookies
+                    injected = parse_cookies(account)
                     apply_raw_cookie(ctx, account)
+                    names = ", ".join(c["name"] for c in injected) or "(kosong!)"
+                    print(f"   cookie disuntikkan: {names} ({len(injected)} cookie)")
                 page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                # Land on the homepage first so TikTok can settle/refresh the
+                # session cookies before we hit the Studio upload page.
+                page.goto("https://www.tiktok.com/", wait_until="domcontentloaded",
+                          timeout=90_000)
+                page.wait_for_timeout(2500)
                 page.goto(UPLOAD_URL, wait_until="domcontentloaded", timeout=90_000)
                 page.wait_for_timeout(4000)
                 if "login" in page.url:

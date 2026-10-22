@@ -11,8 +11,26 @@ def test_single_session_cookie():
     acc = Account(platform="tiktok", label="t", mode="cookie", secret="abc123",
                   extra={"cookie_name": "sessionid", "cookie_domain": ".tiktok.com"})
     cookies = parse_cookies(acc)
-    assert cookies == [{"name": "sessionid", "value": "abc123",
-                        "domain": ".tiktok.com", "path": "/"}]
+    # TikTok session token rides on 3 companion cookies with the same value.
+    assert [c["name"] for c in cookies] == ["sessionid", "sessionid_ss", "sid_tt"]
+    assert all(c["value"] == "abc123" and c["domain"] == ".tiktok.com"
+               and c["path"] == "/" for c in cookies)
+
+
+def test_pasted_full_cookie_header_is_split():
+    acc = Account(platform="tiktok", label="t", mode="cookie",
+                  secret="sessionid=tok123; sid_tt=tok123; uid_tt=zz",
+                  extra={"cookie_name": "sessionid", "cookie_domain": ".tiktok.com"})
+    got = {c["name"]: c["value"] for c in parse_cookies(acc)}
+    assert got == {"sessionid": "tok123", "sid_tt": "tok123", "uid_tt": "zz"}
+
+
+def test_value_with_name_prefix_is_cleaned():
+    acc = Account(platform="tiktok", label="t", mode="cookie",
+                  secret="sessionid=tok999",
+                  extra={"cookie_name": "sessionid", "cookie_domain": ".tiktok.com"})
+    cookies = parse_cookies(acc)
+    assert cookies[0]["value"] == "tok999"
 
 
 def test_cookie_editor_json_export():
