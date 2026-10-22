@@ -35,6 +35,11 @@ def open_login(profile_dir: str) -> None:
 
 def publish(account: Account, job: Job, title: str, description: str,
             profile_dir: str, logs_dir: str) -> PublishResult:
+    if job.kind == "image":
+        # Honest platform limit: YouTube uploads are video-only (community
+        # image posts need a 500+ subscriber channel and a different flow).
+        return PublishResult(account.platform, account.label, "skipped",
+                             "YouTube tidak menerima posting gambar (khusus video/Shorts) - dilewati.")
     try:
         require_file(job.video_path)
         from playwright.sync_api import sync_playwright

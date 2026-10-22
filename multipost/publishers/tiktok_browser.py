@@ -70,10 +70,15 @@ def publish(account: Account, job: Job, caption: str, profile_dir: str,
                         "Klik 'Login Browser' di tab Akun untuk akun ini.")
                 file_input = page.locator("input[type='file']").first
                 file_input.set_input_files(job.video_path, timeout=60_000)
+                if job.kind == "image":
+                    # TikTok Studio switches to Photo mode for images; the
+                    # caption box can take longer to appear.
+                    page.wait_for_timeout(5000)
                 # Wait for the caption editor + processing.
                 editor = page.locator(
                     "div[contenteditable='true'], [data-e2e='caption-input'], "
-                    "textarea[placeholder*='caption' i]").first
+                    "textarea[placeholder*='caption' i], "
+                    "textarea[placeholder*='Describe' i]").first
                 editor.wait_for(state="visible", timeout=180_000)
                 editor.click()
                 page.keyboard.press("Control+A")
@@ -102,7 +107,8 @@ def publish(account: Account, job: Job, caption: str, profile_dir: str,
                 # A confirmation modal can appear AFTER clicking Post.
                 dismiss_overlays(page, seconds=15)
                 page.wait_for_timeout(5000)
-                return ok(account, "Video TikTok terbit (cek profil untuk memastikan).",
+                label = "Foto" if job.kind == "image" else "Video"
+                return ok(account, f"{label} TikTok terbit (cek profil untuk memastikan).",
                           "https://www.tiktok.com/")
             except PublishError as e:
                 shot = _screenshot(ctx, logs_dir)

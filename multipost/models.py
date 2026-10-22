@@ -58,9 +58,22 @@ class PublishResult:
         return asdict(self)
 
 
+IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
+VIDEO_EXTS = (".mp4", ".mov", ".webm")
+
+
+def media_kind(path: str) -> str:
+    """'image' | 'video' from the file extension."""
+    return "image" if (path or "").lower().endswith(IMAGE_EXTS) else "video"
+
+
 @dataclass
 class Job:
-    """One compose submission: one video + one master caption, many targets."""
+    """One compose submission: one media file (video OR image) + one caption."""
+
+    @property
+    def kind(self) -> str:
+        return media_kind(self.video_path)
 
     video_path: str
     caption: str

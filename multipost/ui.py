@@ -21,7 +21,7 @@ from PySide6.QtGui import QColor, QDragEnterEvent, QDropEvent, QFont, QPalette
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDateTimeEdit, QFileDialog, QFormLayout,
     QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox,
-    QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSplitter,
+    QPlainTextEdit, QProgressBar, QProgressDialog, QPushButton, QScrollArea, QSplitter,
     QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -31,6 +31,7 @@ from .captions import LIMITS, adapt
 from .engine import open_login_for, publish_job
 from .models import Account, Job
 from .store import Store
+from .updater import check_latest, download_setup, launch_installer
 
 PLATFORM_COLORS = {
     "instagram": "#E1306C",
@@ -100,10 +101,10 @@ class DropZone(QFrame):
         self.icon = QLabel("🎬")
         self.icon.setStyleSheet("font-size: 34px;")
         self.icon.setAlignment(Qt.AlignCenter)
-        self.text = QLabel("Tarik & letakkan video di sini, atau klik untuk memilih")
+        self.text = QLabel("Tarik & letakkan video / gambar di sini, atau klik untuk memilih")
         self.text.setAlignment(Qt.AlignCenter)
         self.text.setStyleSheet("font-size: 14px; font-weight: 600;")
-        self.sub = QLabel("MP4 / MOV vertikal 9:16 — untuk Reels, TikTok & Shorts")
+        self.sub = QLabel("Video MP4/MOV 9:16 atau gambar JPG/PNG — YouTube khusus video")
         self.sub.setObjectName("hint")
         self.sub.setAlignment(Qt.AlignCenter)
         lay.addWidget(self.icon)
@@ -118,7 +119,8 @@ class DropZone(QFrame):
     def dropEvent(self, e: QDropEvent):
         for url in e.mimeData().urls():
             path = url.toLocalFile()
-            if path.lower().endswith((".mp4", ".mov", ".webm")):
+            if path.lower().endswith((".mp4", ".mov", ".webm",
+                                      ".jpg", ".jpeg", ".png", ".webp")):
                 self.file_dropped.emit(path)
                 return
 
@@ -126,10 +128,11 @@ class DropZone(QFrame):
         self.file_dropped.emit("")  # empty = open file dialog (handled by parent)
 
     def set_file(self, path: str):
+        from .models import media_kind
         size_mb = os.path.getsize(path) / 1_000_000 if os.path.isfile(path) else 0
-        self.icon.setText("✅")
+        self.icon.setText("🖼️" if media_kind(path) == "image" else "🎬")
         self.text.setText(os.path.basename(path))
-        self.sub.setText(f"{size_mb:.1f} MB — klik untuk ganti video")
+        self.sub.setText(f"{size_mb:.1f} MB — klik untuk ganti file")
 
 
 class PlatformCard(QFrame):
@@ -244,6 +247,30 @@ class LoginWorker(QThread):
             self.done.emit(f"Login gagal: {e}")
 
 
+class UpdateCheckWorker(QThread):
+    found = Signal(object)  # update info dict or None
+
+    def run(self):
+        self.found.emit(check_latest(__version__))
+
+
+class UpdateDownloadWorker(QThread):
+    progress = Signal(int)
+    done = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, info: dict):
+        super().__init__()
+        self.info = info
+
+    def run(self):
+        try:
+            path = download_setup(self.info, progress=self.progress.emit)
+            self.done.emit(path)
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -271,6 +298,8 @@ class MainWindow(QMainWindow):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._check_schedule)
         self.timer.start(30_000)
+        # Auto-update check: once a day, silent when up-to-date/offline.
+        QTimer.singleShot(3000, lambda: self._check_update(manual=False))
         self._goto(0)
         self._refresh_accounts()
         self._refresh_history()
@@ -299,6 +328,11 @@ class MainWindow(QMainWindow):
             lay.addWidget(b)
             self.nav_btns.append(b)
         lay.addStretch()
+        self.update_btn = QPushButton("🔄  Cek Update")
+        self.update_btn.setObjectName("nav")
+        self.update_btn.clicked.connect(lambda: self._check_update(manual=True))
+        lay.addWidget(self.update_btn)
+        lay.addSpacing(8)
         engine = detect_system_browser()
         engine_name = {"msedge": "Microsoft Edge (ringan)",
                        "chrome": "Google Chrome"}.get(engine or "", "Chromium")
@@ -315,6 +349,78 @@ class MainWindow(QMainWindow):
             b.setProperty("active", "true" if i == idx else "false")
             b.style().unpolish(b)
             b.style().polish(b)
+
+    # ---------------------------------------------------- auto-update
+    def _check_update(self, manual: bool):
+        import time as _time
+        marker = os.path.join(self.store.data_dir, "last_update_check.txt")
+        if not manual:
+            try:
+                with open(marker, encoding="utf-8") as fh:
+                    if _time.time() - float(fh.read().strip() or 0) < 86_400:
+                        return
+            except Exception:
+                pass
+            try:
+                with open(marker, "w", encoding="utf-8") as fh:
+                    fh.write(str(_time.time()))
+            except Exception:
+                pass
+        if manual:
+            self.update_btn.setText("⏳  Mengecek…")
+            self.update_btn.setEnabled(False)
+        self._upd_worker = UpdateCheckWorker(self)
+
+        def _on_found(info):
+            if manual:
+                self.update_btn.setText("🔄  Cek Update")
+                self.update_btn.setEnabled(True)
+            if info:
+                self._offer_update(info)
+            elif manual:
+                QMessageBox.information(
+                    self, "Update",
+                    f"Kamu sudah memakai versi terbaru (v{__version__}).")
+
+        self._upd_worker.found.connect(_on_found)
+        self._upd_worker.start()
+
+    def _offer_update(self, info: dict):
+        notes = (f"\n\nCatatan rilis:\n{info['notes']}" if info.get("notes") else "")
+        ans = QMessageBox.question(
+            self, "Update Tersedia 🎉",
+            f"MultiPost v{info['version']} tersedia (kamu: v{__version__})."
+            f"{notes}\n\nUpdate sekarang? Software akan tertutup, installer "
+            "berjalan, lalu buka lagi MultiPost dari shortcut.")
+        if ans != QMessageBox.Yes:
+            return
+        dlg = QProgressDialog("Mengunduh update…", "Batal", 0, 100, self)
+        dlg.setWindowModality(Qt.WindowModal)
+        dlg.setMinimumDuration(0)
+        worker = UpdateDownloadWorker(info, self)
+        worker.progress.connect(dlg.setValue)
+        dlg.canceled.connect(worker.terminate)
+
+        def _done(path):
+            dlg.close()
+            launch_installer(path)
+            QMessageBox.information(
+                self, "Update",
+                "Installer update dibuka. MultiPost akan ditutup — ikuti "
+                "wizard-nya (folder install yang sama), lalu buka lagi "
+                "MultiPost. Akun & login-mu aman, tidak tertimpa.")
+            QApplication.quit()
+
+        def _failed(msg):
+            dlg.close()
+            QMessageBox.warning(self, "Update gagal",
+                                f"Unduhan gagal: {msg}\nCoba lagi nanti.")
+
+        worker.done.connect(_done)
+        worker.failed.connect(_failed)
+        self._dl_worker = worker
+        worker.start()
+        dlg.show()
 
     # ------------------------------------------------------------- compose
     def _compose_page(self) -> QWidget:
@@ -449,7 +555,8 @@ class MainWindow(QMainWindow):
     def _on_drop(self, path: str):
         if not path:
             path, _ = QFileDialog.getOpenFileName(
-                self, "Pilih video", "", "Video (*.mp4 *.mov *.webm)")
+                self, "Pilih media", "",
+                "Media (*.mp4 *.mov *.webm *.jpg *.jpeg *.png *.webp)")
         if path and os.path.isfile(path):
             self.video_path = path
             self.dropzone.set_file(path)

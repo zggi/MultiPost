@@ -3,7 +3,7 @@
 ; MultiPost is installed (default C:\BOT\MultiPost).
 
 #define MyAppName "MultiPost"
-#define MyAppVersion "1.3.1"
+#define MyAppVersion "1.4.0"
 #define MyAppExeName "MultiPost.exe"
 
 [Setup]
@@ -19,6 +19,7 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir=installer-output
 OutputBaseFilename=MultiPost-Setup
+CloseApplications=yes
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

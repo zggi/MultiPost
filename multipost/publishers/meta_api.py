@@ -56,10 +56,14 @@ def publish_instagram(account: Account, job: Job, caption: str) -> PublishResult
         ig_id = account.extra.get("ig_user_id")
         if not ig_id:
             raise PublishError("IG User ID kosong. Isi di tab Akun (PANDUAN-AKUN.md).")
-        video_url = _require_media_url(job, "Instagram")
-        r = requests.post(f"{GRAPH}/{ig_id}/media", data={
-            "media_type": "REELS", "video_url": video_url,
-            "caption": caption, "access_token": token}, timeout=60)
+        media_url = _require_media_url(job, "Instagram")
+        if job.kind == "image":
+            payload = {"image_url": media_url, "caption": caption,
+                       "access_token": token}
+        else:
+            payload = {"media_type": "REELS", "video_url": media_url,
+                       "caption": caption, "access_token": token}
+        r = requests.post(f"{GRAPH}/{ig_id}/media", data=payload, timeout=60)
         container = _check(r, "Buat container Instagram").get("id")
         # Poll container until FINISHED (max ~5 min).
         for _ in range(30):
@@ -76,8 +80,9 @@ def publish_instagram(account: Account, job: Job, caption: str) -> PublishResult
         r = requests.post(f"{GRAPH}/{ig_id}/media_publish", data={
             "creation_id": container, "access_token": token}, timeout=60)
         media_id = _check(r, "Publish Instagram").get("id")
-        return ok(account, f"Reels terbit (media {media_id}).",
-                  f"https://www.instagram.com/reel/{media_id}/")
+        kind_label = "Foto" if job.kind == "image" else "Reels"
+        return ok(account, f"{kind_label} Instagram terbit (media {media_id}).",
+                  f"https://www.instagram.com/p/{media_id}/")
     except PublishError as e:
         return fail(account, str(e))
     except requests.RequestException as e:
@@ -90,10 +95,14 @@ def publish_threads(account: Account, job: Job, caption: str) -> PublishResult:
         user_id = account.extra.get("threads_user_id")
         if not user_id:
             raise PublishError("Threads User ID kosong. Isi di tab Akun (PANDUAN-AKUN.md).")
-        video_url = _require_media_url(job, "Threads")
-        r = requests.post(f"{THREADS_GRAPH}/{user_id}/threads", data={
-            "media_type": "VIDEO", "video_url": video_url,
-            "text": caption, "access_token": token}, timeout=60)
+        media_url = _require_media_url(job, "Threads")
+        if job.kind == "image":
+            payload = {"media_type": "IMAGE", "image_url": media_url,
+                       "text": caption, "access_token": token}
+        else:
+            payload = {"media_type": "VIDEO", "video_url": media_url,
+                       "text": caption, "access_token": token}
+        r = requests.post(f"{THREADS_GRAPH}/{user_id}/threads", data=payload, timeout=60)
         container = _check(r, "Buat container Threads").get("id")
         for _ in range(30):
             time.sleep(10)
@@ -123,6 +132,16 @@ def publish_facebook_page(account: Account, job: Job, caption: str) -> PublishRe
         if not page_id:
             raise PublishError("Page ID kosong. Isi di tab Akun (PANDUAN-AKUN.md).")
         require_file(job.video_path)
+        if job.kind == "image":
+            with open(job.video_path, "rb") as fh:
+                r = requests.post(
+                    f"{GRAPH}/{page_id}/photos",
+                    data={"caption": caption, "access_token": token},
+                    files={"source": fh}, timeout=300)
+            photo = _check(r, "Upload foto Facebook Page")
+            photo_id = photo.get("id") or photo.get("post_id")
+            return ok(account, f"Foto Facebook Page terbit (id {photo_id}).",
+                      f"https://www.facebook.com/photo/?fbid={photo_id}")
         with open(job.video_path, "rb") as fh:
             r = requests.post(
                 f"{GRAPH}/{page_id}/videos",
