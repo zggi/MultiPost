@@ -1,0 +1,52 @@
+name: Build MultiPost Setup.exe (Windows)
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+      - name: Build app folder (PyInstaller onedir + Playwright driver)
+        run: >
+          python -m PyInstaller --noconfirm --clean --onedir --windowed
+          --collect-all playwright --name MultiPost app.py
+      - name: Package portable zip
+        run: Compress-Archive -Path dist/MultiPost -DestinationPath MultiPost-Portable.zip
+      - name: Build installer (Inno Setup, wizard with folder picker)
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+            $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          }
+          & $iscc installer.iss
+          if (-not (Test-Path "installer-output/MultiPost-Setup.exe")) {
+            throw "MultiPost-Setup.exe was not produced"
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MultiPost-Windows
+          path: |
+            installer-output/MultiPost-Setup.exe
+            MultiPost-Portable.zip
+      - name: Attach to release (tag builds only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            installer-output/MultiPost-Setup.exe
+            MultiPost-Portable.zip
