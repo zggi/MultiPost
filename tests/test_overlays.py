@@ -14,6 +14,9 @@ class FakeLocator:
     def first(self):
         return self
 
+    def nth(self, _i):
+        return self
+
     def count(self):
         return 1 if self._visible else 0
 

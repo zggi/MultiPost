@@ -80,7 +80,15 @@ def publish(account: Account, job: Job, caption: str, profile_dir: str,
                     "textarea[placeholder*='caption' i], "
                     "textarea[placeholder*='Describe' i]").first
                 editor.wait_for(state="visible", timeout=180_000)
-                editor.click()
+                # TikTok floats a TUXModal over the whole page (real user log
+                # 2026-10-22 23:52): the editor EXISTS but every click is
+                # intercepted until the modal is closed.
+                dismiss_overlays(page, seconds=15)
+                try:
+                    editor.click(timeout=10_000)
+                except Exception:
+                    dismiss_overlays(page, seconds=10)
+                    editor.click(force=True, timeout=10_000)
                 page.keyboard.press("Control+A")
                 page.keyboard.type(caption, delay=5)
                 if job.cover_path and os.path.isfile(job.cover_path):

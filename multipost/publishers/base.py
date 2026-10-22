@@ -69,48 +69,110 @@ def parse_cookies(account: Account) -> list[dict]:
     return [{"name": name, "value": secret, "domain": domain, "path": "/"}]
 
 
-def dismiss_overlays(page, seconds: float = 20) -> bool:
-    """Close modal/popups that intercept clicks (TikTok/YouTube render them in
-    a floating-ui portal on top of everything - Playwright then retries the
-    click forever: 'subtree intercepts pointer events').
+_OVERLAY_SEL = ("[data-floating-ui-portal], div[role='dialog'], "
+                "div[role='alertdialog'], .TUXModal-overlay")
+_OVERLAY_TEXTS = ["Post", "Publish", "Confirm", "Continue", "OK", "Got it",
+                 "Not now", "I'm aware", "Understood", "Agree", "Accept",
+                 "Discard", "Close", "Konfirmasi", "Lanjutkan", "Mengerti",
+                 "Setuju", "Tutup", "Simpan", "Ya", "OK, got it"]
 
-    Strategy: if a dialog/portal is visible, click its primary button
-    (Post/Confirm/Continue/...), else press Escape. Returns True when no
-    overlay remains. Safe to call when nothing is open (returns at once).
+
+def _first_visible_overlay(page):
+    loc = page.locator(_OVERLAY_SEL)
+    try:
+        n = loc.count()
+    except Exception:
+        return None
+    for i in range(min(n, 6)):
+        try:
+            el = loc.nth(i)
+            if el.count() > 0 and el.is_visible():
+                # A portal container with no visible dialog child is harmless.
+                inner = el.locator(
+                    "[role='dialog'], [class*='modal'], [class*='Modal']")
+                has_inner = False
+                try:
+                    for j in range(min(inner.count(), 4)):
+                        if inner.nth(j).is_visible():
+                            has_inner = True
+                            break
+                except Exception:
+                    has_inner = False
+                try:
+                    height = el.evaluate("e => e.getBoundingClientRect().height")
+                except Exception:
+                    height = 999  # cannot measure -> treat as a real overlay
+                if height > 60 or has_inner:
+                    return el
+        except Exception:
+            continue
+    return None
+
+
+def _click_overlay_button(overlay) -> str | None:
+    """Click the dialog's primary/close button. Returns its label or None."""
+    for text in _OVERLAY_TEXTS:
+        btn = overlay.locator(f"button:has-text('{text}')").first
+        try:
+            if btn.count() > 0 and btn.is_visible():
+                btn.click(timeout=1200)
+                return text
+        except Exception:
+            continue
+    # Icon-only close buttons (X) carry an aria-label instead of text.
+    for sel in ("button[aria-label*='close' i]", "button[aria-label*='tutup' i]",
+                "[class*='close'] button", "button[class*='close' i]"):
+        btn = overlay.locator(sel).first
+        try:
+            if btn.count() > 0 and btn.is_visible():
+                btn.click(timeout=1200)
+                return "X (tutup)"
+        except Exception:
+            continue
+    # Last resort: a dialog with exactly ONE visible button - that button is
+    # the way out (notice/acknowledge dialogs), unless it would destroy work.
+    try:
+        buttons = overlay.locator("button")
+        visible = []
+        for i in range(min(buttons.count(), 8)):
+            b = buttons.nth(i)
+            if b.is_visible():
+                visible.append(b)
+        if len(visible) == 1:
+            label = (visible[0].inner_text() or "").strip()
+            if label.lower() not in ("delete", "hapus", "start over", "mulai ulang"):
+                visible[0].click(timeout=1200)
+                return label or "(tombol tunggal)"
+    except Exception:
+        pass
+    return None
+
+
+def dismiss_overlays(page, seconds: float = 20) -> bool:
+    """Close modal/popups that intercept clicks (TikTok floats a TUXModal in a
+    portal over the whole upload page - Playwright then retries clicks into a
+    30s timeout: 'subtree intercepts pointer events').
+
+    Works at ANY step, not just the Post button. Returns True when no overlay
+    remains. Safe to call when nothing is open (returns at once).
     """
     import time
 
-    candidates = ["Post", "Publish", "Confirm", "Continue", "OK", "Got it",
-                  "Not now", "Discard", "Close", "Konfirmasi", "Lanjutkan",
-                  "Tutup", "Simpan", "Ya"]
     deadline = time.time() + seconds
     while True:
-        portal = page.locator(
-            "[data-floating-ui-portal], div[role='dialog'], "
-            "div[role='alertdialog']").first
-        try:
-            visible = portal.count() > 0 and portal.is_visible()
-        except Exception:
-            visible = False
-        if not visible:
+        overlay = _first_visible_overlay(page)
+        if overlay is None:
             return True
-        clicked = False
-        for text in candidates:
-            btn = portal.locator(f"button:has-text('{text}')").first
-            try:
-                if btn.count() > 0 and btn.is_visible():
-                    btn.click(timeout=1200)
-                    clicked = True
-                    break
-            except Exception:
-                continue
-        if not clicked:
+        label = _click_overlay_button(overlay)
+        if label:
+            print(f"   popup ditutup: tombol '{label}'")
+        else:
             try:
                 page.keyboard.press("Escape")
             except Exception:
                 pass
         if time.time() >= deadline:
-            return False
+            return _first_visible_overlay(page) is None
         page.wait_for_timeout(700)
 
 
