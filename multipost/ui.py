@@ -255,7 +255,7 @@ class UpdateCheckWorker(QThread):
 
 
 class UpdateDownloadWorker(QThread):
-    progress = Signal(int)
+    progress = Signal(int, int)  # done_bytes, total_bytes
     done = Signal(str)
     failed = Signal(str)
 
@@ -265,7 +265,9 @@ class UpdateDownloadWorker(QThread):
 
     def run(self):
         try:
-            path = download_setup(self.info, progress=self.progress.emit)
+            path = download_setup(
+                self.info,
+                progress=lambda d, t: self.progress.emit(d, t))
             self.done.emit(path)
         except Exception as e:
             self.failed.emit(str(e))
@@ -394,11 +396,21 @@ class MainWindow(QMainWindow):
             "berjalan, lalu buka lagi MultiPost dari shortcut.")
         if ans != QMessageBox.Yes:
             return
-        dlg = QProgressDialog("Mengunduh update…", "Batal", 0, 100, self)
+        dlg = QProgressDialog("Mengunduh update… 0 MB", "Batal", 0, 100, self)
         dlg.setWindowModality(Qt.WindowModal)
         dlg.setMinimumDuration(0)
         worker = UpdateDownloadWorker(info, self)
-        worker.progress.connect(dlg.setValue)
+
+        def _progress(done_b: int, total_b: int):
+            mb = done_b / 1_000_000
+            if total_b:
+                dlg.setValue(int(done_b * 100 / total_b))
+                dlg.setLabelText(
+                    f"Mengunduh update… {mb:.1f} / {total_b / 1_000_000:.1f} MB")
+            else:
+                dlg.setLabelText(f"Mengunduh update… {mb:.1f} MB")
+
+        worker.progress.connect(_progress)
         dlg.canceled.connect(worker.terminate)
 
         def _done(path):
@@ -413,8 +425,21 @@ class MainWindow(QMainWindow):
 
         def _failed(msg):
             dlg.close()
-            QMessageBox.warning(self, "Update gagal",
-                                f"Unduhan gagal: {msg}\nCoba lagi nanti.")
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Warning)
+            box.setWindowTitle("Update gagal")
+            box.setText(f"Unduhan gagal: {msg}")
+            box.setInformativeText(
+                "Kamu bisa unduh manual dari halaman rilis resmi, "
+                "lalu install seperti biasa (folder yang sama).")
+            open_btn = box.addButton("🌐 Buka Halaman Rilis", QMessageBox.ActionRole)
+            box.addButton("Tutup", QMessageBox.RejectRole)
+            box.exec()
+            if box.clickedButton() is open_btn:
+                from PySide6.QtGui import QDesktopServices
+                from PySide6.QtCore import QUrl
+                QDesktopServices.openUrl(QUrl(
+                    "https://github.com/zggi/MultiPost/releases/latest"))
 
         worker.done.connect(_done)
         worker.failed.connect(_failed)
