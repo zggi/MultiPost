@@ -17,7 +17,7 @@ import time
 
 from ..models import Account, Job, PublishResult
 from .base import (PublishError, apply_raw_cookie, dismiss_overlays, fail,
-                   launch_persistent, ok, require_file)
+                   friendly_error, launch_persistent, ok, require_file)
 
 UPLOAD_URL = "https://www.tiktok.com/tiktokstudio/upload"
 LOGIN_URL = "https://www.tiktok.com/login"
@@ -66,11 +66,19 @@ def publish(account: Account, job: Job, caption: str, profile_dir: str,
                     names = ", ".join(c["name"] for c in injected) or "(kosong!)"
                     print(f"   cookie disuntikkan: {names} ({len(injected)} cookie)")
                 page = ctx.pages[0] if ctx.pages else ctx.new_page()
-                # Land on the homepage first so TikTok can settle/refresh the
-                # session cookies before we hit the Studio upload page.
-                page.goto("https://www.tiktok.com/", wait_until="domcontentloaded",
-                          timeout=90_000)
-                page.wait_for_timeout(2500)
+                if account.mode == "cookie":
+                    # Warm-up ONLY for transplanted cookie sessions: land on
+                    # the homepage so TikTok can settle/refresh the cookies.
+                    # NEVER fatal - TikTok sometimes answers the homepage
+                    # with an error status (ERR_HTTP_RESPONSE_CODE_FAILURE,
+                    # seen 2026-10-23 00:49); the upload page may still work.
+                    try:
+                        page.goto("https://www.tiktok.com/",
+                                  wait_until="commit", timeout=30_000)
+                        page.wait_for_timeout(2500)
+                    except Exception:
+                        print("   pemanasan homepage dilewati (respons TikTok "
+                              "tidak mulus) - lanjut ke halaman upload")
                 page.goto(UPLOAD_URL, wait_until="domcontentloaded", timeout=90_000)
                 page.wait_for_timeout(4000)
                 if "login" in page.url:
@@ -136,4 +144,4 @@ def publish(account: Account, job: Job, caption: str, profile_dir: str,
     except PublishError as e:
         return fail(account, str(e))
     except Exception as e:  # Playwright errors etc. - report, never swallow.
-        return fail(account, f"TikTok browser gagal: {e}")
+        return fail(account, friendly_error(e) or f"TikTok browser gagal: {e}")

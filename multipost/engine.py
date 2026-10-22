@@ -83,12 +83,28 @@ def dispatch(store: Store, account: Account, job: Job, adapted) -> PublishResult
     return meta_browser.publish(account, job, adapted.text, profile_dir, logs_dir)
 
 
+_ACTIVE_LOGINS: set = set()
+
+
 def open_login_for(store: Store, account: Account) -> None:
-    """Open the platform login page in the account's persistent profile."""
+    """Open the platform login page in the account's persistent profile.
+
+    Guarded: a Chromium profile can only be open ONCE - launching it again
+    while a login window (or a publish) is using it fails with
+    ProcessSingleton lock errors. One login per account at a time.
+    """
     profile_dir = store.profile_dir(account.id)
-    if account.platform == "tiktok":
-        tiktok_browser.open_login(profile_dir)
-    elif account.platform == "youtube":
-        youtube_browser.open_login(profile_dir)
-    else:
-        meta_browser.open_login(account.platform, profile_dir)
+    if profile_dir in _ACTIVE_LOGINS:
+        print(f"Login {account.platform} untuk {account.label} sudah terbuka - "
+              "selesaikan di jendela itu dulu.")
+        return
+    _ACTIVE_LOGINS.add(profile_dir)
+    try:
+        if account.platform == "tiktok":
+            tiktok_browser.open_login(profile_dir)
+        elif account.platform == "youtube":
+            youtube_browser.open_login(profile_dir)
+        else:
+            meta_browser.open_login(account.platform, profile_dir)
+    finally:
+        _ACTIVE_LOGINS.discard(profile_dir)

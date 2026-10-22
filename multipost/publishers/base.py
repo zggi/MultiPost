@@ -206,3 +206,14 @@ def apply_raw_cookie(context, account: Account) -> None:
     cookies = parse_cookies(account)
     if cookies:
         context.add_cookies(cookies)
+
+
+def friendly_error(e: Exception) -> str | None:
+    """Translate cryptic Chromium launch errors into guidance, else None."""
+    text = str(e)
+    if "ProcessSingleton" in text or "already in use" in text \
+            or "Opening in existing browser session" in text:
+        return ("Profil browser akun ini masih terbuka di jendela lain "
+                "(jendela Login atau publish yang belum ditutup). Tutup "
+                "jendela Edge MultiPost untuk akun ini, lalu coba lagi.")
+    return None

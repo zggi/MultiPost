@@ -13,7 +13,7 @@ import time
 
 from ..models import Account, Job, PublishResult
 from .base import (PublishError, apply_raw_cookie, dismiss_overlays, fail,
-                   launch_persistent, ok, require_file)
+                   friendly_error, launch_persistent, ok, require_file)
 
 STUDIO_URL = "https://studio.youtube.com"
 LOGIN_URL = "https://accounts.google.com/ServiceLogin?service=youtube"
@@ -107,4 +107,4 @@ def publish(account: Account, job: Job, title: str, description: str,
     except PublishError as e:
         return fail(account, str(e))
     except Exception as e:
-        return fail(account, f"YouTube browser gagal: {e}")
+        return fail(account, friendly_error(e) or f"YouTube browser gagal: {e}")

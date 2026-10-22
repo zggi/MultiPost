@@ -244,7 +244,8 @@ class LoginWorker(QThread):
             open_login_for(self.store, self.account)
             self.done.emit(f"Login selesai: {self.account.label}. Sesi tersimpan.")
         except Exception as e:
-            self.done.emit(f"Login gagal: {e}")
+            from .publishers.base import friendly_error
+            self.done.emit(f"Login gagal: {friendly_error(e) or e}")
 
 
 class UpdateCheckWorker(QThread):
@@ -822,6 +823,15 @@ class MainWindow(QMainWindow):
         if acc.mode == "api":
             QMessageBox.information(self, "Mode API",
                                     "Mode API tidak pakai login browser — cukup token.")
+            return
+        if self.login_worker is not None and self.login_worker.isRunning():
+            # One login window at a time: Chromium profiles are singletons -
+            # a second launch on the same profile dies with ProcessSingleton
+            # errors (seen in the wild 2026-10-23 00:48 log spam).
+            QMessageBox.information(
+                self, "Login sedang terbuka",
+                "Jendela login masih terbuka. Selesaikan login di jendela "
+                "itu (atau tutup jendelanya) sebelum membuka lagi.")
             return
         self._log(f"Membuka login {acc.platform} untuk {acc.label}… "
                   "Login sendiri di jendela browser, lalu tutup jendelanya.")
