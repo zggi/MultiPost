@@ -27,7 +27,7 @@ def require_file(path: str) -> None:
 def launch_persistent(playwright, profile_dir: str, headless: bool = False):
     """Persistent Chromium context: this folder IS the login session ('cookie'
     mode without ever copying raw cookie strings around)."""
-    from ..bootstrap import ensure_chromium
+    from ..bootstrap import browser_launch_kwargs, ensure_chromium
 
     ensure_chromium()
     return playwright.chromium.launch_persistent_context(
@@ -35,6 +35,7 @@ def launch_persistent(playwright, profile_dir: str, headless: bool = False):
         headless=headless,
         viewport={"width": 1280, "height": 900},
         args=["--disable-blink-features=AutomationControlled"],
+        **browser_launch_kwargs(),
     )
 
 
