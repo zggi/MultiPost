@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from multipost.captions import adapt  # noqa: E402
 from multipost.models import Account, Job  # noqa: E402
-from multipost.publishers import custom as custom_pub  # noqa: E402
+from multipost.publishers import custom_browser as custom_pub  # noqa: E402
 
 
 class FakeKeyboard:
@@ -92,7 +92,7 @@ def _run_publish(tag, extra):
     import types
 
     import multipost.publishers.base as b
-    import multipost.publishers.custom as m
+    import multipost.publishers.custom_browser as m
 
     page = FakePage(tag=tag)
     ctx = FakeCtx(page)
