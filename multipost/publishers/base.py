@@ -24,19 +24,26 @@ def require_file(path: str) -> None:
         raise PublishError(f"File video tidak ditemukan: {path!r}. Pilih file dulu.")
 
 
-def launch_persistent(playwright, profile_dir: str, headless: bool = False):
+def launch_persistent(playwright, profile_dir: str, headless: bool = False,
+                      proxy: dict | None = None):
     """Persistent Chromium context: this folder IS the login session ('cookie'
-    mode without ever copying raw cookie strings around)."""
+    mode without ever copying raw cookie strings around).
+
+    proxy: Playwright proxy dict from multipost.proxy.playwright_proxy, or
+    None for a direct connection.
+    """
     from ..bootstrap import browser_launch_kwargs, ensure_chromium
 
     ensure_chromium()
-    return playwright.chromium.launch_persistent_context(
-        profile_dir,
+    kwargs = dict(
         headless=headless,
         viewport={"width": 1280, "height": 900},
         args=["--disable-blink-features=AutomationControlled"],
         **browser_launch_kwargs(),
     )
+    if proxy:
+        kwargs["proxy"] = proxy
+    return playwright.chromium.launch_persistent_context(profile_dir, **kwargs)
 
 
 def parse_cookies(account: Account) -> list[dict]:

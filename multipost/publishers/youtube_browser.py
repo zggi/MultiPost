@@ -19,11 +19,11 @@ STUDIO_URL = "https://studio.youtube.com"
 LOGIN_URL = "https://accounts.google.com/ServiceLogin?service=youtube"
 
 
-def open_login(profile_dir: str) -> None:
+def open_login(profile_dir: str, proxy: dict | None = None) -> None:
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
-        ctx = launch_persistent(p, profile_dir, headless=False)
+        ctx = launch_persistent(p, profile_dir, headless=False, proxy=proxy)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto(LOGIN_URL)
         for _ in range(60):
@@ -34,7 +34,7 @@ def open_login(profile_dir: str) -> None:
 
 
 def publish(account: Account, job: Job, title: str, description: str,
-            profile_dir: str, logs_dir: str) -> PublishResult:
+            profile_dir: str, logs_dir: str, proxy: dict | None = None) -> PublishResult:
     if job.kind == "image":
         # Honest platform limit: YouTube uploads are video-only (community
         # image posts need a 500+ subscriber channel and a different flow).
@@ -45,7 +45,7 @@ def publish(account: Account, job: Job, title: str, description: str,
         from playwright.sync_api import sync_playwright
 
         with sync_playwright() as p:
-            ctx = launch_persistent(p, profile_dir, headless=False)
+            ctx = launch_persistent(p, profile_dir, headless=False, proxy=proxy)
             try:
                 if account.mode == "cookie":
                     account.extra.setdefault("cookie_domain", ".youtube.com")

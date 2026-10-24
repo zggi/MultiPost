@@ -13,6 +13,9 @@ class FakeStore:
     def profile_dir(self, account_id):
         return f"/tmp/profile-{account_id}"
 
+    def load_settings(self):
+        return {"proxy": {}}
+
 
 def test_second_login_while_open_is_skipped():
     acc = Account("tiktok", "TT", "browser")

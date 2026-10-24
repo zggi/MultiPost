@@ -23,13 +23,13 @@ UPLOAD_URL = "https://www.tiktok.com/tiktokstudio/upload"
 LOGIN_URL = "https://www.tiktok.com/login"
 
 
-def open_login(profile_dir: str) -> None:
+def open_login(profile_dir: str, proxy: dict | None = None) -> None:
     """Open a headed browser so the USER logs in themselves (password, OTP and
     CAPTCHA stay between the user and TikTok). Session persists in profile_dir."""
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
-        ctx = launch_persistent(p, profile_dir, headless=False)
+        ctx = launch_persistent(p, profile_dir, headless=False, proxy=proxy)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto(LOGIN_URL)
         # Give the user up to 5 minutes to finish logging in.
@@ -51,13 +51,13 @@ def _screenshot(ctx, data_hint: str) -> str:
 
 
 def publish(account: Account, job: Job, caption: str, profile_dir: str,
-            logs_dir: str) -> PublishResult:
+            logs_dir: str, proxy: dict | None = None) -> PublishResult:
     try:
         require_file(job.video_path)
         from playwright.sync_api import sync_playwright
 
         with sync_playwright() as p:
-            ctx = launch_persistent(p, profile_dir, headless=False)
+            ctx = launch_persistent(p, profile_dir, headless=False, proxy=proxy)
             try:
                 if account.mode == "cookie":
                     from .base import parse_cookies

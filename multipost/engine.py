@@ -10,10 +10,14 @@ Rules baked in (from the social-publishing playbook):
 
 from __future__ import annotations
 
+import time
 from typing import Callable
 
 from .captions import adapt
+from .interval import describe as describe_interval
+from .interval import next_delay
 from .models import Account, Job, PublishResult
+from .proxy import playwright_proxy, requests_proxies
 from .publishers import meta_api, meta_browser, tiktok_browser, youtube_browser
 from .store import Store
 
@@ -26,9 +30,20 @@ def _noop(_: str) -> None:
 
 def publish_job(store: Store, job: Job, accounts: list[Account],
                 log: LogFn = _noop, dry_run: bool = False,
-                on_result=None) -> list[PublishResult]:
+                on_result=None, settings: dict | None = None) -> list[PublishResult]:
     """on_result(result) fires as EACH platform finishes, so the UI can show
-    live per-platform progress instead of one block at the end."""
+    live per-platform progress instead of one block at the end.
+
+    Between two targets the engine waits the configured posting interval
+    (settings['interval_seconds'] + optional jitter) - identical-second
+    multi-platform blasts are the easiest spam signal. The wait is logged.
+    """
+    settings = settings or store.load_settings()
+    proxy_cfg = settings.get("proxy") or {}
+    meta_api.PROXIES = requests_proxies(proxy_cfg)
+    pw_proxy = playwright_proxy(proxy_cfg)
+    interval_base = settings.get("interval_seconds", 60)
+    interval_random = settings.get("interval_random", True)
     results: list[PublishResult] = []
     by_id = {a.id: a for a in accounts}
 
@@ -37,7 +52,16 @@ def publish_job(store: Store, job: Job, accounts: list[Account],
         if on_result is not None:
             on_result(result)
 
-    for account_id in job.account_ids:
+    targets = [a for a in (by_id.get(i) for i in job.account_ids) if a is not None]
+    log(f"[sistem] Interval antar platform: {describe_interval(interval_base, interval_random)}"
+        + (f" via proxy {proxy_cfg.get('type')}://{proxy_cfg.get('host')}:{proxy_cfg.get('port')}"
+           if proxy_cfg.get("enabled") and proxy_cfg.get("host") else ""))
+    for idx, account_id in enumerate(job.account_ids):
+        if idx > 0 and not dry_run:
+            delay = next_delay(interval_base, interval_random)
+            if delay > 0:
+                log(f"[jeda] Menunggu {delay:g} detik sebelum platform berikutnya…")
+                time.sleep(delay)
         account = by_id.get(account_id)
         if account is None:
             _emit(PublishResult("?", account_id, "skipped",
@@ -54,23 +78,25 @@ def publish_job(store: Store, job: Job, accounts: list[Account],
                 + (f", judul: {adapted.title}" if adapted.title else "")))
             continue
         log(f"[{account.platform}] Mulai publish ke '{account.label}' ({account.mode})...")
-        result = dispatch(store, account, job, adapted)
+        result = dispatch(store, account, job, adapted, pw_proxy)
         log(f"[{account.platform}] {result.status.upper()}: {result.message}")
         _emit(result)
     store.append_history(results)
     return results
 
 
-def dispatch(store: Store, account: Account, job: Job, adapted) -> PublishResult:
+def dispatch(store: Store, account: Account, job: Job, adapted,
+             pw_proxy: dict | None = None) -> PublishResult:
     profile_dir = store.profile_dir(account.id)
     logs_dir = store.data_dir + "/logs"
     platform, mode = account.platform, account.mode
 
     if platform == "tiktok":
-        return tiktok_browser.publish(account, job, adapted.text, profile_dir, logs_dir)
+        return tiktok_browser.publish(account, job, adapted.text, profile_dir, logs_dir,
+                                      proxy=pw_proxy)
     if platform == "youtube":
         return youtube_browser.publish(account, job, adapted.title, adapted.text,
-                                       profile_dir, logs_dir)
+                                       profile_dir, logs_dir, proxy=pw_proxy)
     # Meta family
     if mode == "api":
         if platform == "instagram":
@@ -80,7 +106,8 @@ def dispatch(store: Store, account: Account, job: Job, adapted) -> PublishResult
         if platform == "facebook":
             return meta_api.publish_facebook_page(account, job, adapted.text)
     # browser / cookie mode for Meta (experimental fallback)
-    return meta_browser.publish(account, job, adapted.text, profile_dir, logs_dir)
+    return meta_browser.publish(account, job, adapted.text, profile_dir, logs_dir,
+                                proxy=pw_proxy)
 
 
 _ACTIVE_LOGINS: set = set()
@@ -100,11 +127,12 @@ def open_login_for(store: Store, account: Account) -> None:
         return
     _ACTIVE_LOGINS.add(profile_dir)
     try:
+        pw_proxy = playwright_proxy(store.load_settings().get("proxy"))
         if account.platform == "tiktok":
-            tiktok_browser.open_login(profile_dir)
+            tiktok_browser.open_login(profile_dir, proxy=pw_proxy)
         elif account.platform == "youtube":
-            youtube_browser.open_login(profile_dir)
+            youtube_browser.open_login(profile_dir, proxy=pw_proxy)
         else:
-            meta_browser.open_login(account.platform, profile_dir)
+            meta_browser.open_login(account.platform, profile_dir, proxy=pw_proxy)
     finally:
         _ACTIVE_LOGINS.discard(profile_dir)

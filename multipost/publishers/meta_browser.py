@@ -22,11 +22,11 @@ URLS = {
 }
 
 
-def open_login(platform: str, profile_dir: str) -> None:
+def open_login(platform: str, profile_dir: str, proxy: dict | None = None) -> None:
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
-        ctx = launch_persistent(p, profile_dir, headless=False)
+        ctx = launch_persistent(p, profile_dir, headless=False, proxy=proxy)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto(URLS[platform])
         for _ in range(60):
@@ -37,7 +37,7 @@ def open_login(platform: str, profile_dir: str) -> None:
 
 
 def publish(account: Account, job: Job, caption: str, profile_dir: str,
-            logs_dir: str) -> PublishResult:
+            logs_dir: str, proxy: dict | None = None) -> PublishResult:
     # Deliberately honest v1 scope: opening the composer reliably across Meta's
     # changing web UI needs per-account live tuning, so v1 browser mode for Meta
     # uploads the file through the profile session where a stable file input
@@ -47,7 +47,7 @@ def publish(account: Account, job: Job, caption: str, profile_dir: str,
         from playwright.sync_api import sync_playwright
 
         with sync_playwright() as p:
-            ctx = launch_persistent(p, profile_dir, headless=False)
+            ctx = launch_persistent(p, profile_dir, headless=False, proxy=proxy)
             try:
                 page = ctx.pages[0] if ctx.pages else ctx.new_page()
                 page.goto(URLS[account.platform], wait_until="domcontentloaded",

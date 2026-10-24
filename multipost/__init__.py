@@ -1,6 +1,6 @@
 """MultiPost v1 Hybrid - one video, five platforms (Windows desktop app)."""
 
-__version__ = "1.4.4"
+__version__ = "1.5.0"
 APP_NAME = "MultiPost"
 PLATFORMS = ("instagram", "threads", "facebook", "tiktok", "youtube")
 PLATFORM_LABELS = {

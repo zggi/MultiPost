@@ -14,6 +14,9 @@ from __future__ import annotations
 import os
 import time
 
+# Set by engine.publish_job from the global proxy settings ({} = direct).
+PROXIES: dict = {}
+
 import requests
 
 from ..models import Account, Job, PublishResult
@@ -63,13 +66,13 @@ def publish_instagram(account: Account, job: Job, caption: str) -> PublishResult
         else:
             payload = {"media_type": "REELS", "video_url": media_url,
                        "caption": caption, "access_token": token}
-        r = requests.post(f"{GRAPH}/{ig_id}/media", data=payload, timeout=60)
+        r = requests.post(f"{GRAPH}/{ig_id}/media", data=payload, proxies=PROXIES, timeout=60)
         container = _check(r, "Buat container Instagram").get("id")
         # Poll container until FINISHED (max ~5 min).
         for _ in range(30):
             time.sleep(10)
             r = requests.get(f"{GRAPH}/{container}", params={
-                "fields": "status_code", "access_token": token}, timeout=30)
+                "fields": "status_code", "access_token": token}, proxies=PROXIES, timeout=30)
             status = _check(r, "Cek status container").get("status_code")
             if status == "FINISHED":
                 break
@@ -78,7 +81,7 @@ def publish_instagram(account: Account, job: Job, caption: str) -> PublishResult
         else:
             raise PublishError("Timeout menunggu Instagram memproses video.")
         r = requests.post(f"{GRAPH}/{ig_id}/media_publish", data={
-            "creation_id": container, "access_token": token}, timeout=60)
+            "creation_id": container, "access_token": token}, proxies=PROXIES, timeout=60)
         media_id = _check(r, "Publish Instagram").get("id")
         kind_label = "Foto" if job.kind == "image" else "Reels"
         return ok(account, f"{kind_label} Instagram terbit (media {media_id}).",
@@ -102,12 +105,12 @@ def publish_threads(account: Account, job: Job, caption: str) -> PublishResult:
         else:
             payload = {"media_type": "VIDEO", "video_url": media_url,
                        "text": caption, "access_token": token}
-        r = requests.post(f"{THREADS_GRAPH}/{user_id}/threads", data=payload, timeout=60)
+        r = requests.post(f"{THREADS_GRAPH}/{user_id}/threads", data=payload, proxies=PROXIES, timeout=60)
         container = _check(r, "Buat container Threads").get("id")
         for _ in range(30):
             time.sleep(10)
             r = requests.get(f"{THREADS_GRAPH}/{container}", params={
-                "fields": "status", "access_token": token}, timeout=30)
+                "fields": "status", "access_token": token}, proxies=PROXIES, timeout=30)
             status = _check(r, "Cek status Threads").get("status")
             if status == "FINISHED":
                 break
@@ -116,7 +119,7 @@ def publish_threads(account: Account, job: Job, caption: str) -> PublishResult:
         else:
             raise PublishError("Timeout menunggu Threads memproses video.")
         r = requests.post(f"{THREADS_GRAPH}/{user_id}/threads_publish", data={
-            "creation_id": container, "access_token": token}, timeout=60)
+            "creation_id": container, "access_token": token}, proxies=PROXIES, timeout=60)
         post_id = _check(r, "Publish Threads").get("id")
         return ok(account, f"Post Threads terbit (id {post_id}).")
     except PublishError as e:
@@ -137,7 +140,7 @@ def publish_facebook_page(account: Account, job: Job, caption: str) -> PublishRe
                 r = requests.post(
                     f"{GRAPH}/{page_id}/photos",
                     data={"caption": caption, "access_token": token},
-                    files={"source": fh}, timeout=300)
+                    files={"source": fh}, proxies=PROXIES, timeout=300)
             photo = _check(r, "Upload foto Facebook Page")
             photo_id = photo.get("id") or photo.get("post_id")
             return ok(account, f"Foto Facebook Page terbit (id {photo_id}).",
@@ -147,7 +150,7 @@ def publish_facebook_page(account: Account, job: Job, caption: str) -> PublishRe
                 f"{GRAPH}/{page_id}/videos",
                 data={"description": caption, "access_token": token,
                       "title": os.path.basename(job.video_path)},
-                files={"source": fh}, timeout=600)
+                files={"source": fh}, proxies=PROXIES, timeout=600)
         video_id = _check(r, "Upload video Facebook Page").get("id")
         return ok(account, f"Video Facebook Page terbit (id {video_id}).",
                   f"https://www.facebook.com/watch/?v={video_id}")

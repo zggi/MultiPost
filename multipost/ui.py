@@ -16,11 +16,13 @@ from __future__ import annotations
 import os
 import time
 
-from PySide6.QtCore import Qt, QThread, QTimer, Signal
+from PySide6.QtCore import (QEasingCurve, QPropertyAnimation, Qt, QThread,
+                            QTimer, Signal)
 from PySide6.QtGui import QColor, QDragEnterEvent, QDropEvent, QFont, QPalette
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDateTimeEdit, QFileDialog, QFormLayout,
-    QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox,
+    QFrame, QGraphicsOpacityEffect, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+    QMainWindow, QMessageBox,
     QPlainTextEdit, QProgressBar, QProgressDialog, QPushButton, QScrollArea, QSplitter,
     QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
@@ -221,14 +223,17 @@ class PublishWorker(QThread):
     progress = Signal(dict)
     done = Signal(list)
 
-    def __init__(self, store: Store, job: Job, accounts: list[Account]):
+    def __init__(self, store: Store, job: Job, accounts: list[Account],
+                 settings: dict | None = None):
         super().__init__()
         self.store, self.job, self.accounts = store, job, accounts
+        self.settings = settings
 
     def run(self):
         results = publish_job(
             self.store, self.job, self.accounts, log=self.log.emit,
-            on_result=lambda r: self.progress.emit(r.to_dict()))
+            on_result=lambda r: self.progress.emit(r.to_dict()),
+            settings=self.settings)
         self.done.emit([r.to_dict() for r in results])
 
 
@@ -352,6 +357,20 @@ class MainWindow(QMainWindow):
             b.setProperty("active", "true" if i == idx else "false")
             b.style().unpolish(b)
             b.style().polish(b)
+        self._fade(self.pages, 220)
+
+    @staticmethod
+    def _fade(widget, duration: int = 220):
+        """Smooth page/card transition: fade opacity in instead of a hard cut."""
+        effect = QGraphicsOpacityEffect(widget)
+        widget.setGraphicsEffect(effect)
+        anim = QPropertyAnimation(effect, b"opacity", widget)
+        anim.setDuration(duration)
+        anim.setStartValue(0.45)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.OutQuad)
+        anim.start()
+        widget._fade_anim = anim  # keep alive until it finishes
 
     # ---------------------------------------------------- auto-update
     def _check_update(self, manual: bool):
@@ -504,6 +523,21 @@ class MainWindow(QMainWindow):
         sched.addStretch()
         left.addLayout(sched)
 
+        interval_row = QHBoxLayout()
+        interval_row.addWidget(QLabel("⏱️ Jeda antar platform:"))
+        self.interval_spin = QSpinBox()
+        self.interval_spin.setRange(0, 3600)
+        self.interval_spin.setValue(60)
+        self.interval_spin.setSuffix(" dtk")
+        interval_row.addWidget(self.interval_spin)
+        self.interval_random = QCheckBox("Acak ±50% (lebih natural)")
+        self.interval_random.setChecked(True)
+        interval_row.addWidget(self.interval_random)
+        interval_row.addWidget(QLabel("— 0 = tanpa jeda. Jeda membuat posting "
+                                      "tidak serentak & lebih aman dari limit."))
+        interval_row.addStretch()
+        left.addLayout(interval_row)
+
         self.publish_btn = QPushButton("🚀  POSTING SEKARANG")
         self.publish_btn.setObjectName("publish")
         self.publish_btn.clicked.connect(self._publish_clicked)
@@ -643,7 +677,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Sabar", "Publish sebelumnya masih berjalan.")
             return
         if not self.video_path or not os.path.isfile(self.video_path):
-            QMessageBox.warning(self, "Video", "Pilih / letakkan file video dulu.")
+            QMessageBox.warning(self, "Media", "Pilih / letakkan file media dulu.")
             return
         selected = self._selected_ids()
         if not selected:
@@ -685,12 +719,18 @@ class MainWindow(QMainWindow):
 
     def _run_job(self, job: Job):
         accounts = self.store.load_accounts()
+        # Persist the interval controls into settings, then hand them to the job.
+        settings = self.store.load_settings()
+        if hasattr(self, "interval_spin"):
+            settings["interval_seconds"] = int(self.interval_spin.value())
+            settings["interval_random"] = bool(self.interval_random.isChecked())
+            self.store.save_settings(settings)
         self.publish_btn.setEnabled(False)
         self.publish_btn.setText("⏳  SEDANG PUBLISH…")
         for aid in job.account_ids:
             if aid in self.cards:
                 self.cards[aid].set_running()
-        self.worker = PublishWorker(self.store, job, accounts)
+        self.worker = PublishWorker(self.store, job, accounts, settings=settings)
         self.worker.log.connect(self._log)
         self.worker.progress.connect(self._on_progress)
         self.worker.done.connect(self._publish_done)
@@ -701,6 +741,7 @@ class MainWindow(QMainWindow):
             if card.account.label == result["account_label"] and \
                     card.account.platform == result["platform"]:
                 card.set_result(result)
+                self._fade(card, 300)
 
     def _publish_done(self, results: list):
         self.publish_btn.setEnabled(True)
@@ -777,7 +818,61 @@ class MainWindow(QMainWindow):
         form.addRow(hint)
         split.addWidget(form_w)
         lay.addWidget(split)
+
+        # ---- global proxy -------------------------------------------------
+        proxy_box = QGroupBox("🌐 Proxy (opsional — satu proxy untuk semua akun)")
+        proxy_form = QFormLayout(proxy_box)
+        settings = self.store.load_settings()
+        proxy = settings.get("proxy", {})
+        self.proxy_enabled = QCheckBox("Aktifkan proxy")
+        self.proxy_enabled.setChecked(bool(proxy.get("enabled")))
+        self.proxy_type = QComboBox()
+        self.proxy_type.addItems(["http", "socks5"])
+        self.proxy_type.setCurrentText(proxy.get("type") or "http")
+        self.proxy_host = QLineEdit(proxy.get("host") or "")
+        self.proxy_host.setPlaceholderText("mis. 103.12.34.56")
+        self.proxy_port = QSpinBox()
+        self.proxy_port.setRange(1, 65535)
+        self.proxy_port.setValue(int(proxy.get("port") or 8080))
+        self.proxy_user = QLineEdit(proxy.get("username") or "")
+        self.proxy_user.setPlaceholderText("opsional")
+        self.proxy_pass = QLineEdit(proxy.get("password") or "")
+        self.proxy_pass.setEchoMode(QLineEdit.Password)
+        self.proxy_pass.setPlaceholderText("opsional")
+        proxy_form.addRow(self.proxy_enabled)
+        proxy_form.addRow("Jenis:", self.proxy_type)
+        proxy_form.addRow("Host:", self.proxy_host)
+        proxy_form.addRow("Port:", self.proxy_port)
+        proxy_form.addRow("Username:", self.proxy_user)
+        proxy_form.addRow("Password:", self.proxy_pass)
+        proxy_save = QPushButton("💾 Simpan Pengaturan Proxy")
+        proxy_save.clicked.connect(self._save_proxy)
+        proxy_form.addRow(proxy_save)
+        proxy_form.addRow(QLabel(
+            "Proxy dipakai browser (Playwright) & API Meta. Kosong/nonaktif = "
+            "koneksi langsung (paling stabil). Proxy mati = semua publish gagal, "
+            "jadi aktifkan hanya bila perlu (mis. tiap akun beda IP). "
+            "Password terenkripsi DPAPI di PC ini."))
+        lay.addWidget(proxy_box)
         return w
+
+    def _save_proxy(self):
+        settings = self.store.load_settings()
+        settings["proxy"] = {
+            "enabled": bool(self.proxy_enabled.isChecked()),
+            "type": self.proxy_type.currentText(),
+            "host": self.proxy_host.text().strip(),
+            "port": int(self.proxy_port.value()),
+            "username": self.proxy_user.text().strip(),
+            "password": self.proxy_pass.text(),
+        }
+        self.store.save_settings(settings)
+        self._log("Pengaturan proxy tersimpan: "
+                  + ("AKTIF " + settings["proxy"]["type"] + "://"
+                     + settings["proxy"]["host"] + ":"
+                     + str(settings["proxy"]["port"])
+                     if settings["proxy"]["enabled"] and settings["proxy"]["host"]
+                     else "NONAKTIF (koneksi langsung)"))
 
     def _save_account(self):
         platform = self.acc_platform.currentText()

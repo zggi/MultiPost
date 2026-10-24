@@ -11,6 +11,7 @@ import os
 
 from .crypto_store import decrypt_str, encrypt_str
 from .models import Account, Job, PublishResult
+from .proxy import DEFAULTS as PROXY_DEFAULTS
 
 
 def default_data_dir() -> str:
@@ -33,6 +34,35 @@ class Store:
         self.accounts_file = os.path.join(self.data_dir, "accounts.json")
         self.jobs_file = os.path.join(self.data_dir, "jobs.json")
         self.history_file = os.path.join(self.data_dir, "history.json")
+        self.settings_file = os.path.join(self.data_dir, "settings.json")
+
+    # ---- global settings (interval + proxy) ------------------------------
+    def load_settings(self) -> dict:
+        settings = {"interval_seconds": 60, "interval_random": True,
+                    "proxy": dict(PROXY_DEFAULTS)}
+        if os.path.exists(self.settings_file):
+            try:
+                saved = json.loads(open(self.settings_file, encoding="utf-8").read() or "{}")
+            except Exception:
+                saved = {}
+            settings.update({k: v for k, v in saved.items() if k in settings})
+            proxy = dict(PROXY_DEFAULTS)
+            proxy.update(saved.get("proxy", {}) or {})
+            proxy["password"] = decrypt_str(proxy.get("password_enc", ""),
+                                            self.data_dir)
+            proxy.pop("password_enc", None)
+            settings["proxy"] = proxy
+        return settings
+
+    def save_settings(self, settings: dict) -> None:
+        proxy = dict(PROXY_DEFAULTS)
+        proxy.update((settings.get("proxy") or {}))
+        proxy["password_enc"] = encrypt_str(proxy.pop("password", ""),
+                                            self.data_dir)
+        out = {"interval_seconds": settings.get("interval_seconds", 60),
+               "interval_random": settings.get("interval_random", True),
+               "proxy": proxy}
+        self._write(self.settings_file, out)
 
     # ---- accounts -------------------------------------------------------
     def load_accounts(self) -> list[Account]:
