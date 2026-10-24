@@ -20,7 +20,8 @@ from PySide6.QtCore import (QEasingCurve, QPropertyAnimation, Qt, QThread,
                             QTimer, Signal)
 from PySide6.QtGui import QColor, QDragEnterEvent, QDropEvent, QFont, QPalette
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QDateTimeEdit, QFileDialog, QFormLayout,
+    QApplication, QCheckBox, QComboBox, QDateTimeEdit, QDialog, QFileDialog,
+    QFormLayout,
     QFrame, QGraphicsOpacityEffect, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
     QMainWindow, QMessageBox,
     QPlainTextEdit, QProgressBar, QProgressDialog, QPushButton, QScrollArea, QSplitter,
