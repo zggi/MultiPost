@@ -42,6 +42,9 @@ def _truncate(text: str, limit: int, platform: str, warnings: list) -> str:
 def adapt(platform: str, caption: str, title: str = "") -> Adapted:
     caption = (caption or "").strip()
     warnings: list = []
+    if platform == "custom":
+        # A user-defined site has no known limit - pass the caption through.
+        return Adapted(text=caption, warnings=warnings)
     if platform == "youtube":
         yt_title = (title or "").strip() or (caption.splitlines()[0] if caption else "")
         yt_title = _truncate(yt_title, LIMITS["youtube_title"], "youtube (judul)", warnings)

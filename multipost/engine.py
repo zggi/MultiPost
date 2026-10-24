@@ -19,7 +19,8 @@ from .interval import describe as describe_interval
 from .interval import next_delay
 from .models import Account, Job, PublishResult
 from .proxy import playwright_proxy, requests_proxies
-from .publishers import meta_api, meta_browser, tiktok_browser, youtube_browser
+from .publishers import (custom_browser, meta_api, meta_browser,
+                         tiktok_browser, youtube_browser)
 from .store import Store
 
 LogFn = Callable[[str], None]
@@ -115,6 +116,12 @@ def dispatch(store: Store, account: Account, job: Job, adapted,
     logs_dir = store.data_dir + "/logs"
     platform, mode = account.platform, account.mode
 
+    if platform == "custom":
+        if mode == "api":
+            return PublishResult(platform, account.label, "error",
+                                 "Platform custom hanya tersedia mode browser.")
+        return custom_browser.publish(account, job, adapted.text, profile_dir, logs_dir,
+                                      proxy=pw_proxy)
     if platform == "tiktok":
         return tiktok_browser.publish(account, job, adapted.text, profile_dir, logs_dir,
                                       proxy=pw_proxy)
@@ -152,7 +159,9 @@ def open_login_for(store: Store, account: Account) -> None:
     _ACTIVE_LOGINS.add(profile_dir)
     try:
         pw_proxy = playwright_proxy(store.load_settings().get("proxy"))
-        if account.platform == "tiktok":
+        if account.platform == "custom":
+            custom_browser.open_login(account, profile_dir, proxy=pw_proxy)
+        elif account.platform == "tiktok":
             tiktok_browser.open_login(profile_dir, proxy=pw_proxy)
         elif account.platform == "youtube":
             youtube_browser.open_login(profile_dir, proxy=pw_proxy)

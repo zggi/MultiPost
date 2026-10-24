@@ -42,10 +42,11 @@ PLATFORM_COLORS = {
     "facebook": "#1877F2",
     "tiktok": "#FE2C55",
     "youtube": "#FF3B30",
+    "custom": "#7C6CFF",
 }
 PLATFORM_ICONS = {
     "instagram": "📸", "threads": "🧵", "facebook": "👍",
-    "tiktok": "🎵", "youtube": "▶️",
+    "tiktok": "🎵", "youtube": "▶️", "custom": "🔧",
 }
 
 THEME = """
@@ -204,7 +205,10 @@ class PlatformCard(QFrame):
         top = QHBoxLayout()
         dot = QLabel("●")
         dot.setStyleSheet(f"color: {color}; font-size: 15px;")
-        name = QLabel(f"{PLATFORM_ICONS[account.platform]} {PLATFORM_LABELS[account.platform]}")
+        display = (account.extra.get("custom_name")
+                   if account.platform == "custom" and account.extra.get("custom_name")
+                   else PLATFORM_LABELS[account.platform])
+        name = QLabel(f"{PLATFORM_ICONS[account.platform]} {display}")
         name.setStyleSheet("font-weight: 700; font-size: 13px;")
         self.check = QLabel("✓ ON")
         self.check.setStyleSheet(
@@ -880,6 +884,35 @@ class MainWindow(QMainWindow):
         form.addRow("Token / Cookie:", self.acc_secret)
         form.addRow("ID platform:", self.acc_extra_id)
         form.addRow("Nama cookie:", self.acc_cookie_name)
+        # ---- custom platform fields (only for platform == "custom") -------
+        self.custom_box = QGroupBox("🔧 Pengaturan platform custom (mode browser saja)")
+        custom_form = QFormLayout(self.custom_box)
+        self.custom_name = QLineEdit()
+        self.custom_name.setPlaceholderText("mis. Web Toko Saya")
+        self.custom_upload_url = QLineEdit()
+        self.custom_upload_url.setPlaceholderText("mis. https://contoh.com/upload")
+        self.custom_file_selector = QLineEdit()
+        self.custom_file_selector.setPlaceholderText("kosong = input[type='file']")
+        self.custom_caption_selector = QLineEdit()
+        self.custom_caption_selector.setPlaceholderText(
+            "kosong = textarea, [contenteditable='true']")
+        self.custom_publish_selector = QLineEdit()
+        self.custom_publish_selector.setPlaceholderText(
+            "kosong = tombol Posting / Publish / submit")
+        custom_form.addRow("Nama platform:", self.custom_name)
+        custom_form.addRow("URL halaman upload:", self.custom_upload_url)
+        custom_form.addRow("Selector input file:", self.custom_file_selector)
+        custom_form.addRow("Selector caption:", self.custom_caption_selector)
+        custom_form.addRow("Selector tombol posting:", self.custom_publish_selector)
+        custom_form.addRow(QLabel(
+            "Cara cari selector: buka halaman upload di browser → F12 → "
+            "klik kanan elemen → Copy → Copy selector, lalu paste di sini.\n"
+            "Selector kosong memakai default di atas. Setelah simpan, klik "
+            "'Login Browser' untuk login sekali di situs itu."))
+        form.addRow(self.custom_box)
+        self.acc_platform.currentTextChanged.connect(
+            lambda p: self.custom_box.setVisible(p == "custom"))
+        self.custom_box.setVisible(False)
         save = QPushButton("💾 Simpan Akun")
         save.clicked.connect(self._save_account)
         form.addRow(save)
@@ -953,20 +986,37 @@ class MainWindow(QMainWindow):
         platform = self.acc_platform.currentText()
         label = self.acc_label.text().strip() or platform
         extra = {}
-        extra_id = self.acc_extra_id.text().strip()
-        if extra_id:
-            key = {"instagram": "ig_user_id", "threads": "threads_user_id",
-                   "facebook": "page_id"}.get(platform)
-            if key:
-                extra[key] = extra_id
-        if self.acc_mode.currentText() == "cookie":
-            extra["cookie_name"] = self.acc_cookie_name.text().strip() or "sessionid"
-            extra["cookie_domain"] = {
-                "tiktok": ".tiktok.com", "youtube": ".youtube.com",
-                "instagram": ".instagram.com", "facebook": ".facebook.com",
-                "threads": ".threads.net"}[platform]
+        mode = self.acc_mode.currentText()
+        if platform == "custom":
+            # A user-defined site has no API contract - browser only.
+            mode = "browser"
+            extra = {
+                "custom_name": self.custom_name.text().strip(),
+                "custom_upload_url": self.custom_upload_url.text().strip(),
+                "custom_file_selector": self.custom_file_selector.text().strip(),
+                "custom_caption_selector": self.custom_caption_selector.text().strip(),
+                "custom_publish_selector": self.custom_publish_selector.text().strip(),
+            }
+            if not extra["custom_upload_url"]:
+                QMessageBox.warning(self, "Platform custom",
+                                    "Isi dulu URL halaman upload-nya.")
+                return
+            label = extra["custom_name"] or label
+        else:
+            extra_id = self.acc_extra_id.text().strip()
+            if extra_id:
+                key = {"instagram": "ig_user_id", "threads": "threads_user_id",
+                       "facebook": "page_id"}.get(platform)
+                if key:
+                    extra[key] = extra_id
+            if mode == "cookie":
+                extra["cookie_name"] = self.acc_cookie_name.text().strip() or "sessionid"
+                extra["cookie_domain"] = {
+                    "tiktok": ".tiktok.com", "youtube": ".youtube.com",
+                    "instagram": ".instagram.com", "facebook": ".facebook.com",
+                    "threads": ".threads.net"}[platform]
         self.store.upsert_account(Account(
-            platform=platform, label=label, mode=self.acc_mode.currentText(),
+            platform=platform, label=label, mode=mode,
             secret=self.acc_secret.toPlainText().strip(), extra=extra))
         self._log(f"Akun tersimpan: {label}")
         self._refresh_accounts()
