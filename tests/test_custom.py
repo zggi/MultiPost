@@ -161,7 +161,7 @@ def test_publish_without_url_is_error_not_crash():
     acc = Account(platform="custom", label="Toko", mode="browser", extra={})
     job = Job(video_path="/tmp/v.mp4", caption="halo", account_ids=[acc.id])
     res = custom_pub.publish(acc, job, "halo", "/tmp/prof", "/tmp/logs")
-    assert res.status == "error"
+    assert res.status == "failed"
     assert "URL" in res.message
 
 

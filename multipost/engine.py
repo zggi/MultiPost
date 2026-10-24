@@ -118,7 +118,7 @@ def dispatch(store: Store, account: Account, job: Job, adapted,
 
     if platform == "custom":
         if mode == "api":
-            return PublishResult(platform, account.label, "error",
+            return PublishResult(platform, account.label, "failed",
                                  "Platform custom hanya tersedia mode browser.")
         return custom_browser.publish(account, job, adapted.text, profile_dir, logs_dir,
                                       proxy=pw_proxy)
