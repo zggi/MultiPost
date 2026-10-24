@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QFrame, QGraphicsOpacityEffect, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
     QMainWindow, QMessageBox,
-    QPlainTextEdit, QProgressBar, QProgressDialog, QPushButton, QScrollArea, QSplitter,
+    QPlainTextEdit, QProgressBar, QProgressDialog, QPushButton, QScrollArea, QSpinBox, QSplitter,
     QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
