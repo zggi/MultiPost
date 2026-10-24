@@ -23,7 +23,7 @@ def test_second_login_while_open_is_skipped():
     release = threading.Event()
     started = threading.Event()
 
-    def fake_open_login(profile_dir):
+    def fake_open_login(profile_dir, proxy=None):
         calls.append(profile_dir)
         started.set()
         release.wait(timeout=10)
