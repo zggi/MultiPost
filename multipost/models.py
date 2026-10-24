@@ -84,6 +84,9 @@ class Job:
     scheduled_at: float = 0.0  # 0 = publish now
     id: str = field(default_factory=_new_id)
     created_at: float = field(default_factory=time.time)
+    # Per-account content overrides: {account_id: {"video_path": str|"",
+    # "caption": str|""}} - empty values mean "use the master content".
+    overrides: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -100,4 +103,5 @@ class Job:
             scheduled_at=d.get("scheduled_at", 0.0),
             id=d.get("id") or _new_id(),
             created_at=d.get("created_at", time.time()),
+            overrides=d.get("overrides", {}) or {},
         )

@@ -10,6 +10,7 @@ Rules baked in (from the social-publishing playbook):
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Callable
 
@@ -26,6 +27,25 @@ LogFn = Callable[[str], None]
 
 def _noop(_: str) -> None:
     pass
+
+
+def resolve_job_for(job: Job, account_id: str) -> Job:
+    """Apply a per-account content override (v1.6.0), if any.
+
+    Returns the job as-is when the account has no override, or a copy with
+    the override's media/caption swapped in (empty override values fall back
+    to the master content, so a caption-only override keeps the master media).
+    """
+    from dataclasses import replace
+
+    override = (job.overrides or {}).get(account_id) or {}
+    media = (override.get("video_path") or "").strip()
+    caption = (override.get("caption") or "").strip()
+    if not media and not caption:
+        return job
+    return replace(job,
+                   video_path=media or job.video_path,
+                   caption=caption or job.caption)
 
 
 def publish_job(store: Store, job: Job, accounts: list[Account],
@@ -67,7 +87,11 @@ def publish_job(store: Store, job: Job, accounts: list[Account],
             _emit(PublishResult("?", account_id, "skipped",
                                 "Akun tidak ditemukan (sudah dihapus?)."))
             continue
-        adapted = adapt(account.platform, job.caption, job.title)
+        ajob = resolve_job_for(job, account_id)
+        if ajob is not job:
+            log(f"[{account.platform}] Konten khusus untuk '{account.label}' "
+                f"(media: {os.path.basename(ajob.video_path)})")
+        adapted = adapt(account.platform, ajob.caption, ajob.title)
         for w in adapted.warnings:
             log(f"[{account.platform}] {w}")
         if dry_run:
@@ -78,7 +102,7 @@ def publish_job(store: Store, job: Job, accounts: list[Account],
                 + (f", judul: {adapted.title}" if adapted.title else "")))
             continue
         log(f"[{account.platform}] Mulai publish ke '{account.label}' ({account.mode})...")
-        result = dispatch(store, account, job, adapted, pw_proxy)
+        result = dispatch(store, account, ajob, adapted, pw_proxy)
         log(f"[{account.platform}] {result.status.upper()}: {result.message}")
         _emit(result)
     store.append_history(results)

@@ -137,8 +137,59 @@ class DropZone(QFrame):
         self.sub.setText(f"{size_mb:.1f} MB — klik untuk ganti file")
 
 
+class OverrideDialog(QDialog):
+    """Per-account content override: optional own media and/or caption.
+    Empty fields = fall back to the master content for that part."""
+
+    def __init__(self, parent, account: Account, current: dict):
+        super().__init__(parent)
+        self.setWindowTitle(f"Konten khusus — {account.label}")
+        lay = QVBoxLayout(self)
+        lay.addWidget(QLabel("Kosongkan salah satu = pakai konten utama untuk bagian itu."))
+        self.file_edit = QLineEdit(current.get("video_path", ""))
+        self.file_edit.setPlaceholderText("File khusus akun ini (opsional — kosong = file utama)")
+        pick = QPushButton("📁 Pilih file…")
+        pick.clicked.connect(self._pick)
+        file_row = QHBoxLayout()
+        file_row.addWidget(self.file_edit, 1)
+        file_row.addWidget(pick)
+        lay.addLayout(file_row)
+        self.cap_edit = QPlainTextEdit(current.get("caption", ""))
+        self.cap_edit.setPlaceholderText("Caption khusus akun ini (opsional — kosong = caption utama)")
+        self.cap_edit.setMaximumHeight(110)
+        lay.addWidget(self.cap_edit)
+        btns = QHBoxLayout()
+        save = QPushButton("💾 Simpan")
+        save.clicked.connect(self.accept)
+        clear = QPushButton("🗑️ Hapus override")
+        clear.clicked.connect(self._clear)
+        btns.addWidget(save)
+        btns.addWidget(clear)
+        lay.addLayout(btns)
+        self.result: dict | None = None
+
+    def _pick(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Pilih media khusus",
+            "", "Media (*.mp4 *.mov *.webm *.jpg *.jpeg *.png *.webp)")
+        if path:
+            self.file_edit.setText(path)
+
+    def _clear(self):
+        self.result = {}
+        self.reject()
+
+    def accept(self):
+        self.result = {
+            "video_path": self.file_edit.text().strip(),
+            "caption": self.cap_edit.toPlainText().strip(),
+        }
+        super().accept()
+
+
 class PlatformCard(QFrame):
     toggled = Signal(str, bool)
+    override_clicked = Signal(str)
 
     def __init__(self, account: Account):
         super().__init__()
@@ -166,6 +217,20 @@ class PlatformCard(QFrame):
         label = QLabel(f"{account.label}  ·  mode {account.mode}")
         label.setObjectName("hint")
         lay.addWidget(label)
+        bottom = QHBoxLayout()
+        self.override_badge = QLabel("")
+        self.override_badge.setStyleSheet(
+            "background: #FFC94D; color: #3A2A00; font-weight: 800; "
+            "padding: 1px 8px; border-radius: 8px; font-size: 11px;")
+        self.override_badge.setVisible(False)
+        ov_btn = QPushButton("✏️ Konten khusus")
+        ov_btn.setObjectName("nav")
+        # A child button consumes its own click, so this never toggles the card.
+        ov_btn.clicked.connect(lambda: self.override_clicked.emit(self.account.id))
+        bottom.addWidget(self.override_badge)
+        bottom.addStretch()
+        bottom.addWidget(ov_btn)
+        lay.addLayout(bottom)
         self.status = QLabel("")
         self.status.setStyleSheet("font-size: 11px; font-weight: 600;")
         lay.addWidget(self.status)
@@ -173,6 +238,11 @@ class PlatformCard(QFrame):
         self.bar.setVisible(False)
         lay.addWidget(self.bar)
         self._paint()
+
+    def set_override(self, has_override: bool, media_name: str = ""):
+        self.override_badge.setVisible(has_override)
+        self.override_badge.setText(
+            f"✏️ khusus{f' · {media_name}' if media_name else ''}")
 
     def _paint(self):
         color = PLATFORM_COLORS[self.account.platform]
@@ -285,6 +355,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"MultiPost v{__version__} — 1 Video, 5 Platform")
         self.resize(1160, 780)
         self.store = Store()
+        self.overrides: dict = {}  # account_id -> {"video_path", "caption"}
         self.worker: PublishWorker | None = None
         self.login_worker: LoginWorker | None = None
         self.cards: dict[str, PlatformCard] = {}
@@ -704,7 +775,10 @@ class MainWindow(QMainWindow):
                   caption=self.caption_edit.toPlainText(),
                   title=self.title_edit.text(),
                   media_url=self.media_url_edit.text().strip(),
-                  account_ids=selected)
+                  account_ids=selected,
+                  overrides={aid: ov for aid, ov in self.overrides.items()
+                             if aid in selected
+                             and (ov.get("video_path") or ov.get("caption"))})
         if scheduled:
             job.scheduled_at = self.schedule_edit.dateTime().toSecsSinceEpoch()
             self.store.add_job(job)
@@ -960,9 +1034,36 @@ class MainWindow(QMainWindow):
         for acc in accounts:
             card = PlatformCard(acc)
             card.toggled.connect(lambda _aid, _on: self._update_preview())
+            card.override_clicked.connect(self._edit_override)
+            ov = self.overrides.get(acc.id) or {}
+            if ov.get("video_path") or ov.get("caption"):
+                card.set_override(True, os.path.basename(ov["video_path"])
+                                  if ov.get("video_path") else "")
             self.cards_lay.addWidget(card)
             self.cards[acc.id] = card
         self._update_counters()
+
+    def _edit_override(self, account_id: str):
+        accounts = {a.id: a for a in self.store.load_accounts()}
+        acc = accounts.get(account_id)
+        if not acc:
+            return
+        dlg = OverrideDialog(self, acc, self.overrides.get(account_id) or {})
+        if dlg.exec() == QDialog.Accepted:
+            result = dlg.result or {}
+            if result.get("video_path") or result.get("caption"):
+                self.overrides[account_id] = result
+            else:
+                self.overrides.pop(account_id, None)
+        elif dlg.result == {}:
+            # "Hapus override" pressed.
+            self.overrides.pop(account_id, None)
+        ov = self.overrides.get(account_id) or {}
+        card = self.cards.get(account_id)
+        if card:
+            card.set_override(bool(ov.get("video_path") or ov.get("caption")),
+                              os.path.basename(ov["video_path"])
+                              if ov.get("video_path") else "")
 
     # ------------------------------------------------------------- history
     def _history_page(self) -> QWidget:
