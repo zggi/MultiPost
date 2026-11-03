@@ -43,10 +43,11 @@ PLATFORM_COLORS = {
     "tiktok": "#FE2C55",
     "youtube": "#FF3B30",
     "custom": "#7C6CFF",
+    "discord": "#5865F2",
 }
 PLATFORM_ICONS = {
     "instagram": "📸", "threads": "🧵", "facebook": "👍",
-    "tiktok": "🎵", "youtube": "▶️", "custom": "🔧",
+    "tiktok": "🎵", "youtube": "▶️", "custom": "🔧", "discord": "💬",
 }
 
 THEME = """
@@ -987,6 +988,24 @@ class MainWindow(QMainWindow):
         label = self.acc_label.text().strip() or platform
         extra = {}
         mode = self.acc_mode.currentText()
+        if platform == "discord":
+            # Webhook URL is the credential; no browser login, no API token.
+            mode = "webhook"
+            secret = self.acc_secret.toPlainText().strip()
+            if not secret.startswith(("https://discord.com/api/webhooks/",
+                                      "https://discordapp.com/api/webhooks/")):
+                QMessageBox.warning(
+                    self, "Discord",
+                    "Isi kolom Token/Cookie dengan URL webhook channel "
+                    "(Server Settings -> Integrations -> Webhooks -> "
+                    "Copy Webhook URL).")
+                return
+            self.store.upsert_account(Account(
+                platform=platform, label=label, mode=mode,
+                secret=secret, extra={}))
+            self._log(f"Akun tersimpan: {label}")
+            self._refresh_accounts()
+            return
         if platform == "custom":
             # A user-defined site has no API contract - browser only.
             mode = "browser"
@@ -1043,6 +1062,12 @@ class MainWindow(QMainWindow):
         if acc.mode == "api":
             QMessageBox.information(self, "Mode API",
                                     "Mode API tidak pakai login browser — cukup token.")
+            return
+        if acc.mode == "webhook":
+            QMessageBox.information(
+                self, "Discord webhook",
+                "Discord webhook tidak pakai login browser — cukup URL "
+                "webhook-nya. Pastikan webhook masih aktif di server.")
             return
         if self.login_worker is not None and self.login_worker.isRunning():
             # One login window at a time: Chromium profiles are singletons -

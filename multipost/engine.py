@@ -19,8 +19,8 @@ from .interval import describe as describe_interval
 from .interval import next_delay
 from .models import Account, Job, PublishResult
 from .proxy import playwright_proxy, requests_proxies
-from .publishers import (custom_browser, meta_api, meta_browser,
-                         tiktok_browser, youtube_browser)
+from .publishers import (custom_browser, discord_webhook, meta_api,
+                         meta_browser, tiktok_browser, youtube_browser)
 from .store import Store
 
 LogFn = Callable[[str], None]
@@ -62,6 +62,7 @@ def publish_job(store: Store, job: Job, accounts: list[Account],
     settings = settings or store.load_settings()
     proxy_cfg = settings.get("proxy") or {}
     meta_api.PROXIES = requests_proxies(proxy_cfg)
+    discord_webhook.PROXIES = requests_proxies(proxy_cfg)
     pw_proxy = playwright_proxy(proxy_cfg)
     interval_base = settings.get("interval_seconds", 60)
     interval_random = settings.get("interval_random", True)
@@ -116,6 +117,8 @@ def dispatch(store: Store, account: Account, job: Job, adapted,
     logs_dir = store.data_dir + "/logs"
     platform, mode = account.platform, account.mode
 
+    if platform == "discord":
+        return discord_webhook.publish(account, job, adapted.text)
     if platform == "custom":
         if mode == "api":
             return PublishResult(platform, account.label, "failed",

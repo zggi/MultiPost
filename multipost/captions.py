@@ -14,6 +14,7 @@ LIMITS = {
     "threads": 500,
     "facebook": 5000,   # practical composer limit we target for Page posts
     "tiktok": 2200,
+    "discord": 2000,
     "youtube_desc": 5000,
     "youtube_title": 100,
 }
